@@ -14,6 +14,10 @@ export const useStatistics = () => {
     try {
       const data = await apiService.getStatistics();
       setStatistics(data);
+      // Also update streak from statistics
+      if (data && typeof data.current_streak === 'number') {
+        setCurrentStreak(data.current_streak);
+      }
     } catch (error) {
       console.error('Failed to load statistics:', error);
       setError('Failed to load statistics');
@@ -32,8 +36,9 @@ export const useStatistics = () => {
     }
   };
 
+  // Load statistics on mount
   useEffect(() => {
-    loadStreak();
+    loadStatistics();
   }, []);
 
   return {

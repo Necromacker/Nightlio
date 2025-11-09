@@ -25,6 +25,7 @@ const AppContent = () => {
   const [selectedMood, setSelectedMood] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [detectedMood, setDetectedMood] = useState(null); // Store mood from camera detection
   
   // Custom hooks
   const { pastEntries, setPastEntries, loading: historyLoading, error: historyError, refreshHistory } = useMoodData();
@@ -45,6 +46,7 @@ const AppContent = () => {
     setShowCamera(false);
     setEditingEntry(null);
     setSelectedMood(moodValue);
+    setDetectedMood(moodValue); // Store detected mood for AI chat
     setCurrentView("entry");
   };
 
@@ -63,6 +65,10 @@ const AppContent = () => {
     setSelectedMood(null);
     setEditingEntry(null);
     refreshHistory();
+    // Refresh statistics when entry is submitted
+    if (typeof loadStatistics === 'function') {
+      loadStatistics();
+    }
   };
 
   const handleEntryDeleted = (deletedEntryId) => {
@@ -88,6 +94,10 @@ const AppContent = () => {
     setSelectedMood(null);
     setCurrentView("history");
     refreshHistory();
+    // Refresh statistics when entry is updated
+    if (typeof loadStatistics === 'function') {
+      loadStatistics();
+    }
   };
 
   const handleViewChange = (view) => {
@@ -159,7 +169,7 @@ const AppContent = () => {
             />
           )}
 
-              {currentView === "achievements" && <AchievementsView />}
+              {currentView === "achievements" && <AchievementsView detectedMood={detectedMood} />}
               {currentView === "goals" && <GoalsView />}
               {currentView === "settings" && <SettingsView />}
             </main>

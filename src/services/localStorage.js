@@ -276,21 +276,45 @@ export const achievementStorage = {
 export const calculateStreak = (entries) => {
   if (entries.length === 0) return 0;
   
-  const sortedEntries = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-  let streak = 0;
-  let currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
+  // Get unique dates (one entry per day counts)
+  const dateSet = new Set();
+  entries.forEach(entry => {
+    if (entry.date) {
+      // Handle both date strings and Date objects
+      const dateStr = typeof entry.date === 'string' ? entry.date : entry.date.toISOString().split('T')[0];
+      dateSet.add(dateStr);
+    }
+  });
   
-  for (const entry of sortedEntries) {
-    const entryDate = new Date(entry.date);
+  const uniqueDates = Array.from(dateSet).sort((a, b) => new Date(b) - new Date(a));
+  if (uniqueDates.length === 0) return 0;
+  
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Check if today has an entry
+  const todayStr = today.toISOString().split('T')[0];
+  const hasToday = uniqueDates.includes(todayStr);
+  
+  // Start from today or yesterday
+  let checkDate = new Date(today);
+  if (!hasToday) {
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+  
+  // Count consecutive days
+  for (let i = 0; i < uniqueDates.length; i++) {
+    const entryDateStr = uniqueDates[i];
+    const entryDate = new Date(entryDateStr);
     entryDate.setHours(0, 0, 0, 0);
     
-    const daysDiff = Math.floor((currentDate - entryDate) / (1000 * 60 * 60 * 24));
+    const daysDiff = Math.floor((checkDate - entryDate) / (1000 * 60 * 60 * 24));
     
     if (daysDiff === streak) {
       streak++;
-      currentDate = new Date(entryDate);
-      currentDate.setDate(currentDate.getDate() - 1);
+      checkDate = new Date(entryDate);
+      checkDate.setDate(checkDate.getDate() - 1);
     } else if (daysDiff > streak) {
       break;
     }
