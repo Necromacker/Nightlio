@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Face Emotion Recognition</title>
+    <style>
+        body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; background:#f6f8fb; }
+        .card { background:#fff; border-radius:10px; box-shadow:0 6px 22px rgba(15,23,42,0.08); padding:18px; width:540px; }
+        video { width:100%; height:auto; border-radius:8px; background:#000; }
+        .row { display:flex; gap:10px; align-items:center; margin-top:12px; }
+        #emotionLabel { font-weight:700; color:#0b6efd; }
+        button { padding:8px 12px; border-radius:6px; border:1px solid #dfe4ee; background:#fff; cursor:pointer; }
+        button.primary { background:#0b6efd; color:#fff; border-color:transparent; }
+        .status { margin-left:auto; color:#6b7280; font-size:0.95rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="row">
+            <div>Detected: <span id="emotionLabel">—</span></div>
+            <div class="status" id="status">Idle</div>
+            <button id="startBtn" class="primary">Start</button>
+            <button id="stopBtn">Stop</button>
+        </div>
+    </div>
+
+    <script>
+        // Elements
+        const video = document.getElementById('video');
+        const emotionLabel = document.getElementById('emotionLabel');
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        let stream = null;
+        let timer = null;
+
+        // Resize frames to reduce payload (max width)
+        function captureAndSend() {
+            if (!video.videoWidth) return;
+            const maxW = 400;
+            const scale = Math.min(1, maxW / video.videoWidth);
+            const w = Math.round(video.videoWidth * scale);
+            const h = Math.round(video.videoHeight * scale);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, w, h);
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.7);
+            statusEl.textContent = 'Sending…';
+
+            fetch('/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imgData })
+            })
+            .then(r => r.json())
+            .then(data => {
+                emotionLabel.textContent = data.emotion || 'No Face';
+                statusEl.textContent = 'OK';
+            })
+            .catch(err => {
+                statusEl.textContent = 'Error';
+                console.error('predict error', err);
+            });
+        }
+
+        async function start() {
+            if (stream) return;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                video.srcObject = stream;
+                statusEl.textContent = 'Running';
+            // send a frame every 2000ms (2 seconds)
+            timer = setInterval(captureAndSend, 200);
+            } catch (err) {
+                statusEl.textContent = 'Camera denied';
+                console.error(err);
+            }
+        }
+
+        function stop() {
+            if (timer) { clearInterval(timer); timer = null; }
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            statusEl.textContent = 'Stopped';
+            emotionLabel.textContent = '—';
+        }
+
+        startBtn.addEventListener('click', start);
+        stopBtn.addEventListener('click', stop);
+
+        // Auto-start for convenience when page loads
+        // Comment this if you prefer manual start
+        // start();
+    </script>
+</body>
+</html>
