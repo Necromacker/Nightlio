@@ -37,6 +37,11 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
 
   // Start camera
   useEffect(() => {
+    let videoElement = null;
+    let currentStream = null;
+    let handleLoadedMetadata = null;
+    let handleError = null;
+    
     const startCamera = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -47,11 +52,38 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
           }
         });
         
+        currentStream = mediaStream;
+        setStream(mediaStream);
+        
         if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-          setStream(mediaStream);
-          setIsLoading(false);
-          setIsDetecting(true);
+          videoElement = videoRef.current;
+          videoElement.srcObject = mediaStream;
+          
+          // Wait for video to be ready
+          handleLoadedMetadata = () => {
+            videoElement.play().then(() => {
+              setIsLoading(false);
+              setIsDetecting(true);
+            }).catch((playErr) => {
+              console.error('Error playing video:', playErr);
+              setError('Could not start video playback.');
+              setIsLoading(false);
+            });
+          };
+          
+          handleError = (err) => {
+            console.error('Video error:', err);
+            setError('Error loading video stream.');
+            setIsLoading(false);
+          };
+          
+          // Check if video is already ready
+          if (videoElement.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+            handleLoadedMetadata();
+          } else {
+            videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+          }
+          videoElement.addEventListener('error', handleError);
         }
       } catch (err) {
         console.error('Error accessing camera:', err);
@@ -63,8 +95,13 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
     startCamera();
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+      if (videoElement && handleLoadedMetadata && handleError) {
+        videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        videoElement.removeEventListener('error', handleError);
+        videoElement.srcObject = null;
       }
       if (detectionIntervalRef.current) {
         clearInterval(detectionIntervalRef.current);
