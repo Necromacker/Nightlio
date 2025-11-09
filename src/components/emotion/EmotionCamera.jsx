@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, X, Check } from 'lucide-react';
-import * as faceapi from 'face-api.js';
 
+// Flask backend emotions: angry, disgust, fear, happy, neutral, sad, surprise
 const EMOTION_TO_MOOD = {
   'happy': 5,
   'sad': 1,
   'angry': 2,
-  'surprised': 4,
-  'fearful': 2,
-  'disgusted': 2,
+  'surprise': 4,
+  'fear': 2,
+  'disgust': 2,
   'neutral': 3,
 };
 
@@ -16,67 +16,27 @@ const EMOTION_LABELS = {
   'happy': 'Happy 😊',
   'sad': 'Sad 😢',
   'angry': 'Angry 😠',
-  'surprised': 'Surprised 😲',
-  'fearful': 'Fearful 😨',
-  'disgusted': 'Disgusted 🤢',
+  'surprise': 'Surprised 😲',
+  'fear': 'Fearful 😨',
+  'disgust': 'Disgusted 🤢',
   'neutral': 'Neutral 😐',
 };
+
+const FLASK_API_URL = 'http://localhost:8000/predict';
 
 const EmotionCamera = ({ onMoodDetected, onClose }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [detectedEmotion, setDetectedEmotion] = useState(null);
   const [detectedMood, setDetectedMood] = useState(null);
-  const [isDetecting, setIsDetecting] = useState(false);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState(null);
-
-  // Load face-api models
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        const MODEL_URL = '/models';
-        const GITHUB_MODELS_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
-        
-        // Try to load models from public/models directory first
-        try {
-          await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-          ]);
-          console.log('Models loaded from local /models directory');
-        } catch (e) {
-          // Fallback to GitHub raw content
-          console.log('Loading models from GitHub...');
-          await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(GITHUB_MODELS_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(GITHUB_MODELS_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(GITHUB_MODELS_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(GITHUB_MODELS_URL),
-          ]);
-          console.log('Models loaded from GitHub');
-        }
-        
-        setModelsLoaded(true);
-        setIsLoading(false);
-      } catch (err) {
-        console.error('Error loading face-api models:', err);
-        setError('Failed to load emotion detection models. Please check your internet connection and try again.');
-        setIsLoading(false);
-      }
-    };
-
-    loadModels();
-  }, []);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const detectionIntervalRef = useRef(null);
 
   // Start camera
   useEffect(() => {
-    if (!modelsLoaded) return;
-
     const startCamera = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -90,6 +50,8 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
           setStream(mediaStream);
+          setIsLoading(false);
+          setIsDetecting(true);
         }
       } catch (err) {
         console.error('Error accessing camera:', err);
@@ -104,56 +66,95 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
     };
-  }, [modelsLoaded]);
+  }, []);
 
-  // Detect emotions
+  // Detect emotions using Flask backend
   useEffect(() => {
-    if (!modelsLoaded || !videoRef.current || !canvasRef.current) return;
+    if (!isDetecting || !videoRef.current || !canvasRef.current) return;
 
     const detectEmotion = async () => {
       if (!videoRef.current || videoRef.current.readyState !== 4) return;
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const displaySize = { width: video.width, height: video.height };
-      
-      faceapi.matchDimensions(canvas, displaySize);
-
-      const detections = await faceapi
-        .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks()
-        .withFaceExpressions();
-
-      const resizedDetections = faceapi.resizeResults(detections, displaySize);
-      
-      // Clear canvas
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw detections
-      faceapi.draw.drawDetections(canvas, resizedDetections);
-      faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-      faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
 
-      if (detections.length > 0) {
-        const expressions = detections[0].expressions;
-        const emotions = Object.keys(expressions);
-        const sortedEmotions = emotions.sort((a, b) => expressions[b] - expressions[a]);
-        const topEmotion = sortedEmotions[0];
-        const confidence = expressions[topEmotion];
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
 
-        // Only update if confidence is high enough
-        if (confidence > 0.5) {
-          setDetectedEmotion(topEmotion);
-          setDetectedMood(EMOTION_TO_MOOD[topEmotion] || 3);
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      try {
+        // Convert canvas to base64 image
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+        // Send to Flask backend
+        const response = await fetch(FLASK_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ image: imageData }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+          console.error('Flask API error:', data.error);
+          return;
+        }
+
+        if (data.emotion && data.emotion !== 'No Face') {
+          const emotion = data.emotion.toLowerCase();
+          setDetectedEmotion(emotion);
+          setDetectedMood(EMOTION_TO_MOOD[emotion] || 3);
+          
+          // Draw a simple rectangle to indicate face detection
+          ctx.strokeStyle = '#00ff00';
+          ctx.lineWidth = 3;
+          // Draw a rectangle in the center area (approximate face location)
+          const rectSize = Math.min(canvas.width, canvas.height) * 0.4;
+          const x = (canvas.width - rectSize) / 2;
+          const y = (canvas.height - rectSize) / 2;
+          ctx.strokeRect(x, y, rectSize, rectSize);
+          
+          // Draw emotion label
+          ctx.fillStyle = '#00ff00';
+          ctx.font = 'bold 24px Arial';
+          ctx.fillText(EMOTION_LABELS[emotion] || emotion, x, y - 10);
+        } else {
+          // Clear detection if no face
+          setDetectedEmotion(null);
+          setDetectedMood(null);
+        }
+      } catch (err) {
+        console.error('Error detecting emotion:', err);
+        // Don't show error for every failed request, just log it
+        if (err.message.includes('Failed to fetch') && !error) {
+          setError('Could not connect to emotion detection server. Make sure the Flask server is running on http://localhost:8000');
         }
       }
     };
 
-    const interval = setInterval(detectEmotion, 100);
-    return () => clearInterval(interval);
-  }, [modelsLoaded, isDetecting]);
+    // Start detection loop - check every 500ms to avoid overwhelming the server
+    detectionIntervalRef.current = setInterval(detectEmotion, 500);
+
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
+    };
+  }, [isDetecting, error]);
 
   const handleConfirm = () => {
     if (detectedMood) {
@@ -164,6 +165,9 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
   const handleClose = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
+    }
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
     }
     onClose();
   };
@@ -187,6 +191,9 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
           textAlign: 'center',
         }}>
           <p style={{ color: 'var(--text)', marginBottom: '1rem' }}>{error}</p>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            To start the Flask server, run: <code style={{ background: 'var(--bg)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>cd Face-detection && python app.py</code>
+          </p>
           <button
             onClick={handleClose}
             style={{
@@ -247,7 +254,7 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
 
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <p style={{ color: 'var(--text-muted)' }}>Loading emotion detection...</p>
+            <p style={{ color: 'var(--text-muted)' }}>Starting camera...</p>
           </div>
         ) : (
           <>
@@ -279,6 +286,7 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
                   left: 0,
                   width: '100%',
                   height: '100%',
+                  pointerEvents: 'none',
                 }}
               />
             </div>
@@ -298,7 +306,7 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
                   color: 'white',
                   marginBottom: '0.5rem',
                 }}>
-                  Detected: {EMOTION_LABELS[detectedEmotion]}
+                  Detected: {EMOTION_LABELS[detectedEmotion] || detectedEmotion}
                 </p>
                 <p style={{ 
                   margin: 0, 
@@ -306,6 +314,24 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
                   color: 'rgba(255, 255, 255, 0.8)',
                 }}>
                   Mood Level: {detectedMood}/5
+                </p>
+              </div>
+            )}
+
+            {!detectedEmotion && (
+              <div style={{
+                marginTop: '1.5rem',
+                padding: '1rem',
+                background: 'var(--bg-card)',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: '0.9rem', 
+                  color: 'var(--text-muted)',
+                }}>
+                  Position your face in the camera frame...
                 </p>
               </div>
             )}
@@ -345,7 +371,7 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
                 }}
               >
                 <Check size={18} />
-                Use This Mood
+                Confirm Mood
               </button>
             </div>
           </>
@@ -356,4 +382,3 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
 };
 
 export default EmotionCamera;
-

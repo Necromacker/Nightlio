@@ -16,14 +16,16 @@ def index():
 def predict_emotion_with_model(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    if len(faces) == 0:
+        return "No Face"
     for (x, y, w, h) in faces:
         face_img = gray[y:y+h, x:x+w]
         face_img = cv2.resize(face_img, (48, 48))
         features = extract_features(face_img)
-    # `extract_features` already returns a batched tensor (1,48,48,1)
-    prediction = model.predict(features)
-    emotion_id = int(np.argmax(prediction))
-    return labels[emotion_id]
+        # `extract_features` already returns a batched tensor (1,48,48,1)
+        prediction = model.predict(features)
+        emotion_id = int(np.argmax(prediction))
+        return labels[emotion_id]
     return "No Face"
 
 @app.route('/predict', methods=['POST'])
