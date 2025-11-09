@@ -39,11 +39,52 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
   useEffect(() => {
     let videoElement = null;
     let currentStream = null;
-    let handleLoadedMetadata = null;
-    let handleError = null;
+    let timeoutId = null;
+    const eventHandlers = [];
+    
+    const startVideo = () => {
+      if (!videoElement) return;
+      
+      videoElement.play().then(() => {
+        console.log('Video started playing');
+        setIsLoading(false);
+        setIsDetecting(true);
+        if (timeoutId) clearTimeout(timeoutId);
+      }).catch((playErr) => {
+        console.error('Error playing video:', playErr);
+        setError('Could not start video playback.');
+        setIsLoading(false);
+        if (timeoutId) clearTimeout(timeoutId);
+      });
+    };
+    
+    const handleCanPlay = () => {
+      console.log('Video can play');
+      startVideo();
+    };
+    
+    const handleLoadedMetadata = () => {
+      console.log('Video metadata loaded');
+      startVideo();
+    };
+    
+    const handlePlaying = () => {
+      console.log('Video is playing');
+      setIsLoading(false);
+      setIsDetecting(true);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+    
+    const handleError = (err) => {
+      console.error('Video error:', err);
+      setError('Error loading video stream.');
+      setIsLoading(false);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
     
     const startCamera = async () => {
       try {
+        console.log('Requesting camera access...');
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { 
             width: 640, 
@@ -52,39 +93,48 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
           }
         });
         
+        console.log('Camera access granted');
         currentStream = mediaStream;
         setStream(mediaStream);
         
-        if (videoRef.current) {
-          videoElement = videoRef.current;
-          videoElement.srcObject = mediaStream;
-          
-          // Wait for video to be ready
-          handleLoadedMetadata = () => {
-            videoElement.play().then(() => {
-              setIsLoading(false);
-              setIsDetecting(true);
-            }).catch((playErr) => {
-              console.error('Error playing video:', playErr);
-              setError('Could not start video playback.');
-              setIsLoading(false);
-            });
-          };
-          
-          handleError = (err) => {
-            console.error('Video error:', err);
-            setError('Error loading video stream.');
-            setIsLoading(false);
-          };
-          
-          // Check if video is already ready
-          if (videoElement.readyState >= 2) { // HAVE_CURRENT_DATA or higher
-            handleLoadedMetadata();
-          } else {
+        // Use setTimeout to ensure video element is ready
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoElement = videoRef.current;
+            console.log('Setting video srcObject');
+            videoElement.srcObject = mediaStream;
+            
+            // Add multiple event listeners for reliability
             videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+            videoElement.addEventListener('canplay', handleCanPlay);
+            videoElement.addEventListener('playing', handlePlaying);
+            videoElement.addEventListener('error', handleError);
+            
+            eventHandlers.push(
+              { event: 'loadedmetadata', handler: handleLoadedMetadata },
+              { event: 'canplay', handler: handleCanPlay },
+              { event: 'playing', handler: handlePlaying },
+              { event: 'error', handler: handleError }
+            );
+            
+            // Fallback: if video doesn't start in 3 seconds, try to start it manually
+            timeoutId = setTimeout(() => {
+              console.log('Timeout fallback - trying to start video');
+              if (videoElement && videoElement.readyState >= 2) {
+                startVideo();
+              } else {
+                setError('Video took too long to load. Please try again.');
+                setIsLoading(false);
+              }
+            }, 3000);
+            
+            // Try to start immediately if already ready
+            if (videoElement.readyState >= 2) {
+              console.log('Video already ready, starting immediately');
+              startVideo();
+            }
           }
-          videoElement.addEventListener('error', handleError);
-        }
+        }, 100);
       } catch (err) {
         console.error('Error accessing camera:', err);
         setError('Could not access camera. Please allow camera permissions.');
@@ -95,12 +145,14 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
     startCamera();
 
     return () => {
+      if (timeoutId) clearTimeout(timeoutId);
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
-      if (videoElement && handleLoadedMetadata && handleError) {
-        videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-        videoElement.removeEventListener('error', handleError);
+      if (videoElement) {
+        eventHandlers.forEach(({ event, handler }) => {
+          videoElement.removeEventListener(event, handler);
+        });
         videoElement.srcObject = null;
       }
       if (detectionIntervalRef.current) {
@@ -289,45 +341,57 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
           Detect Your Mood
         </h2>
 
-        {isLoading ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <p style={{ color: 'var(--text-muted)' }}>Starting camera...</p>
-          </div>
-        ) : (
-          <>
-            <div style={{
-              position: 'relative',
+        <div style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: '500px',
+          margin: '0 auto',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          background: '#000',
+        }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            style={{
               width: '100%',
-              maxWidth: '500px',
-              margin: '0 auto',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              background: '#000',
+              height: 'auto',
+              display: 'block',
+            }}
+          />
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+            }}
+          />
+          {isLoading && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(0, 0, 0, 0.7)',
+              color: 'white',
             }}>
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                style={{
-                  width: '100%',
-                  height: 'auto',
-                  display: 'block',
-                }}
-              />
-              <canvas
-                ref={canvasRef}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                }}
-              />
+              <p>Starting camera...</p>
             </div>
+          )}
+        </div>
 
+        {!isLoading && (
+          <>
             {detectedEmotion && (
               <div style={{
                 marginTop: '1.5rem',
@@ -373,46 +437,47 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
               </div>
             )}
 
-            <div style={{
-              display: 'flex',
-              gap: '1rem',
-              marginTop: '1.5rem',
-              justifyContent: 'center',
-            }}>
-              <button
-                onClick={handleClose}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  background: 'transparent',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={!detectedMood}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  background: detectedMood ? 'var(--accent-bg)' : 'var(--border)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: detectedMood ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                }}
-              >
-                <Check size={18} />
-                Confirm Mood
-              </button>
-            </div>
           </>
         )}
+
+        <div style={{
+          display: 'flex',
+          gap: '1rem',
+          marginTop: '1.5rem',
+          justifyContent: 'center',
+        }}>
+          <button
+            onClick={handleClose}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: 'transparent',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!detectedMood || isLoading}
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: (detectedMood && !isLoading) ? 'var(--accent-bg)' : 'var(--border)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: (detectedMood && !isLoading) ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <Check size={18} />
+            Confirm Mood
+          </button>
+        </div>
       </div>
     </div>
   );
