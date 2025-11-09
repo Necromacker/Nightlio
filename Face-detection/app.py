@@ -1,5 +1,6 @@
 
 from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import cv2
 import numpy as np
 import base64
@@ -7,6 +8,8 @@ import base64
 from realtimedetection import extract_features, model, labels, face_cascade
 
 app = Flask(__name__)
+# Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route('/')
 def index():
