@@ -14,6 +14,7 @@ import SettingsView from "./views/SettingsView";
 import GoalsView from "./views/GoalsView";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import AchievementsView from "./views/AchievementsView";
+import AIChatView from "./views/AIChatView";
 import EmotionCamera from "./components/emotion/EmotionCamera";
 import { useMoodData } from "./hooks/useMoodData";
 import { useGroups } from "./hooks/useGroups";
@@ -169,7 +170,8 @@ const AppContent = () => {
             />
           )}
 
-              {currentView === "achievements" && <AchievementsView detectedMood={detectedMood} />}
+              {currentView === "achievements" && <AchievementsView />}
+              {currentView === "aichat" && <AIChatView detectedMood={detectedMood} />}
               {currentView === "goals" && <GoalsView />}
               {currentView === "settings" && <SettingsView />}
             </main>

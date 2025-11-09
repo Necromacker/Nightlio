@@ -280,42 +280,59 @@ export const calculateStreak = (entries) => {
   const dateSet = new Set();
   entries.forEach(entry => {
     if (entry.date) {
-      // Handle both date strings and Date objects
-      const dateStr = typeof entry.date === 'string' ? entry.date : entry.date.toISOString().split('T')[0];
+      // Normalize date to YYYY-MM-DD format
+      let dateStr;
+      if (typeof entry.date === 'string') {
+        // If it's already YYYY-MM-DD, use it
+        if (entry.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          dateStr = entry.date;
+        } else {
+          // Try to parse and format
+          const d = new Date(entry.date);
+          dateStr = d.toISOString().split('T')[0];
+        }
+      } else {
+        dateStr = entry.date.toISOString().split('T')[0];
+      }
       dateSet.add(dateStr);
     }
   });
   
-  const uniqueDates = Array.from(dateSet).sort((a, b) => new Date(b) - new Date(a));
+  const uniqueDates = Array.from(dateSet).sort((a, b) => {
+    // Sort descending (most recent first)
+    return new Date(b) - new Date(a);
+  });
+  
   if (uniqueDates.length === 0) return 0;
   
-  let streak = 0;
+  // Get today's date in YYYY-MM-DD format
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
-  // Check if today has an entry
   const todayStr = today.toISOString().split('T')[0];
+  
+  // Check if we have an entry for today
   const hasToday = uniqueDates.includes(todayStr);
   
-  // Start from today or yesterday
-  let checkDate = new Date(today);
+  // Start counting from today (if entry exists) or yesterday
+  let expectedDate = new Date(today);
   if (!hasToday) {
-    checkDate.setDate(checkDate.getDate() - 1);
+    expectedDate.setDate(expectedDate.getDate() - 1);
   }
   
-  // Count consecutive days
+  let streak = 0;
+  
+  // Count consecutive days backwards from today/yesterday
   for (let i = 0; i < uniqueDates.length; i++) {
     const entryDateStr = uniqueDates[i];
-    const entryDate = new Date(entryDateStr);
-    entryDate.setHours(0, 0, 0, 0);
+    const expectedDateStr = expectedDate.toISOString().split('T')[0];
     
-    const daysDiff = Math.floor((checkDate - entryDate) / (1000 * 60 * 60 * 24));
-    
-    if (daysDiff === streak) {
+    // If this entry matches the expected date, increment streak
+    if (entryDateStr === expectedDateStr) {
       streak++;
-      checkDate = new Date(entryDate);
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else if (daysDiff > streak) {
+      // Move to previous day
+      expectedDate.setDate(expectedDate.getDate() - 1);
+    } else {
+      // If dates don't match, the streak is broken
       break;
     }
   }

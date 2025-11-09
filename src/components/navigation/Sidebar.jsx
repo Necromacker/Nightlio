@@ -1,4 +1,4 @@
-import { Home, BarChart3, Trophy, Settings, Target } from 'lucide-react';
+import { Home, BarChart3, Trophy, Settings, Target, MessageCircle } from 'lucide-react';
 
 const Sidebar = ({ currentView, onViewChange, onLoadStatistics }) => {
   const items = [
@@ -6,6 +6,7 @@ const Sidebar = ({ currentView, onViewChange, onLoadStatistics }) => {
     { key: 'goals', label: 'Goals', icon: Target },
     { key: 'stats', label: 'Statistics', icon: BarChart3 },
     { key: 'achievements', label: 'Achievements', icon: Trophy },
+    { key: 'aichat', label: 'AI Chat', icon: MessageCircle },
   ];
 
   const handleClick = (key) => {

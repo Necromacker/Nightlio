@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Zap, Flame, Target, BarChart3, Crown } from 'lucide-react';
 import Modal from '../components/ui/Modal';
 import ProgressBar from '../components/ui/ProgressBar';
-import AIChat from '../components/ai/AIChat';
 import apiService from '../services/api';
 
 // Simple Achievement Card Component
@@ -171,7 +170,7 @@ const getAllAchievements = () => [
   }
 ];
 
-const AchievementsView = ({ detectedMood }) => {
+const AchievementsView = () => {
   // Web3 removed
   const [achievements, setAchievements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -272,9 +271,6 @@ const AchievementsView = ({ detectedMood }) => {
           Tips: Log daily to maintain your streak. Viewing statistics contributes to "Data Lover".
         </div>
       </Modal>
-
-      {/* AI Chat Section */}
-      <AIChat detectedMood={detectedMood} />
     </div>
   );
 };
