@@ -209,14 +209,7 @@ const EmotionCamera = ({ onMoodDetected, onClose }) => {
           setDetectedMood(EMOTION_TO_MOOD[emotion] || 3);
           
           // Draw a simple rectangle to indicate face detection
-          ctx.strokeStyle = '#00ff00';
-          ctx.lineWidth = 3;
-          // Draw a rectangle in the center area (approximate face location)
-          const rectSize = Math.min(canvas.width, canvas.height) * 0.4;
-          const x = (canvas.width - rectSize) / 2;
-          const y = (canvas.height - rectSize) / 2;
-          ctx.strokeRect(x, y, rectSize, rectSize);
-          
+         
           // Draw emotion label
           ctx.fillStyle = '#00ff00';
           ctx.font = 'bold 24px Arial';

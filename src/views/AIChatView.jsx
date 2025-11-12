@@ -225,7 +225,7 @@ const AIChatView = ({ detectedMood }) => {
               style={{
                 display: 'flex',
                 gap: '0.75rem',
-                alignItems: 'flex-start',
+                alignItems: 'center',
                 flexDirection: message.sender === 'user' ? 'row-reverse' : 'row',
               }}
             >
@@ -353,8 +353,7 @@ const AIChatView = ({ detectedMood }) => {
                 fontSize: '0.95rem',
                 fontFamily: 'inherit',
                 resize: 'none',
-                minHeight: '44px',
-                maxHeight: '120px',
+                maxHeight: '44px',
                 outline: 'none',
               }}
               rows={1}
